@@ -8,6 +8,8 @@ mod hsl_inputs;
 mod hsl_report;
 #[path = "backtest_hsl_runtime.rs"]
 pub(crate) mod hsl_runtime;
+#[path = "backtest_hsl_window.rs"]
+mod hsl_window;
 
 use crate::analysis::{analyze_equity_series, calc_fill_activity_metrics, FillActivityMetrics};
 use crate::constants::{CLOSE, HIGH, LONG, LOW, SHORT, VOLUME};
@@ -612,6 +614,7 @@ pub struct Backtest<'a> {
     hsl_scopes: Vec<hsl_runtime::Scope>,
     hsl_cutoffs: hsl_cache::Cutoffs,
     hsl_traces: hsl_cache::Traces,
+    hsl_windows: hsl_window::Windows,
     hsl_report: hsl_report::Report,
     btc_collateral_initialized: bool,
     strategy_equity_series: Vec<f64>,
@@ -2158,6 +2161,7 @@ impl<'a> Backtest<'a> {
             hsl_scopes: Vec::new(),
             hsl_cutoffs: std::collections::BTreeMap::new(),
             hsl_traces: std::collections::BTreeMap::new(),
+            hsl_windows: std::collections::BTreeMap::new(),
             hsl_report: hsl_report::Report::new(
                 backtest_params.hsl_detailed_report && !backtest_params.metrics_only,
                 !backtest_params.metrics_only,

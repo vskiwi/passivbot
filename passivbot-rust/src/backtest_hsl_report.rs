@@ -531,6 +531,7 @@ mod tests {
             observations: 1,
             episodes: 1,
             cursor: None,
+            simulator: None,
         }
     }
 

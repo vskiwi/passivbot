@@ -315,9 +315,20 @@ impl Backtest<'_> {
             }
         });
         let cutoff = self.hsl_history_cutoff(side, coin);
+        if !boundary {
+            if let Some(scope) = self.advance_hsl_window(k, side, coin, settings, cutoff)? {
+                return Ok(scope);
+            }
+        }
         let symbol = coin.map(|c| self.backtest_params.coins[c].as_str());
         let observed = self.hsl_inputs_at_clipped(k, mode, side_name, symbol, boundary, cutoff)?;
         let timestamp = observed.snapshot.now;
+        let capture = (
+            observed.snapshot.now,
+            observed.snapshot.start,
+            observed.fill_range,
+            observed.tape_complete && !boundary,
+        );
         let slots = side.map_or(1, |s| observed.slots[s]) as u64;
         let exposure_budget = self.hsl_exposure_budget(side, coin);
         let budget = if coin.is_some() && slots == 0 {
@@ -342,6 +353,8 @@ impl Backtest<'_> {
             restart: settings.restart,
         })?;
         result.reasons.extend(observed.reasons);
+        let facts = result.simulator.take();
+        self.remember_hsl_window(k, (side, coin), capture, facts);
         self.seed_hsl_trace((side, coin), &mut result);
         Ok(Scope {
             timestamp,

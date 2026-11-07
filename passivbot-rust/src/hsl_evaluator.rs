@@ -89,6 +89,25 @@ pub struct Output {
     pub episodes: usize,
     #[serde(skip)]
     pub(crate) cursor: Option<controller::Cursor>,
+    /// Simulator-only facts behind this decision (see `SimulatorFacts`).
+    #[serde(skip)]
+    pub(crate) simulator: Option<SimulatorFacts>,
+}
+
+/// The reconstructed trace and prepared history endpoint behind a simulator
+/// decision. The simulator uses them to extend an unchanged sliding-window
+/// capture by one sample instead of rebuilding it; they never carry permission
+/// and are never serialized or read by live adapters.
+#[derive(Clone, Debug)]
+pub(crate) struct SimulatorFacts {
+    pub episodes: Vec<controller::Episode>,
+    pub single_pair: bool,
+    pub boundaries: usize,
+    /// Quantity and basis a historical sample after the last retained fill uses.
+    pub tail_size: f64,
+    pub tail_basis: f64,
+    /// Reasons collected before controller replay (prepared + trace).
+    pub reasons: BTreeSet<String>,
 }
 
 /// Normalize only selected pairs to one bounded minute grid. Source-resolution
@@ -291,6 +310,7 @@ fn evaluate_with_reuse<const SEED: bool, const REUSE: bool>(
             observations: 0,
             episodes: 0,
             cursor: None,
+            simulator: None,
         });
     }
     let budget = budget(
@@ -300,7 +320,20 @@ fn evaluate_with_reuse<const SEED: bool, const REUSE: bool>(
         input.scale_budget_with_excess_allowance,
         input.exposure_budget.as_ref(),
     )?;
+    let mut facts = None;
     let trace = if REUSE && already_normalized(&input.snapshot)? {
+        if SEED {
+            // Simulator captures on a complete minute grid may be extended later;
+            // record the prepared endpoint the composed trace was built from.
+            facts = prepared.pairs.first().map(|pair| {
+                let h = &pair.history;
+                let (size, basis) = h
+                    .events
+                    .last()
+                    .map_or((h.opening_size.abs(), h.opening_basis), |e| (e.after, e.basis));
+                (prepared.pairs.len() == 1, prepared.boundaries.len(), size, basis)
+            });
+        }
         compose_prepared(&input.snapshot, prepared, false)?
     } else if REUSE && normalized_minute_prefix(&input.snapshot)? {
         // Preserve the reference normalizer's endpoint diagnostic as well as values.
@@ -328,6 +361,16 @@ fn evaluate_with_reuse<const SEED: bool, const REUSE: bool>(
     } else {
         controller::replay_latest_with_events(&replay_input)
     }?;
+    let simulator = facts.map(|(single_pair, boundaries, tail_size, tail_basis)| {
+        SimulatorFacts {
+            episodes: replay_input.episodes,
+            single_pair,
+            boundaries,
+            tail_size,
+            tail_basis,
+            reasons: reasons.clone(),
+        }
+    });
     let decisions = replay.decisions;
     if replay.numeric_range_approximation {
         reasons.insert("numeric_range_approximation".into());
@@ -341,6 +384,7 @@ fn evaluate_with_reuse<const SEED: bool, const REUSE: bool>(
         observations,
         episodes,
         cursor: replay.cursor,
+        simulator,
     })
 }
 

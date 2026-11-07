@@ -10,6 +10,11 @@ pub(super) struct Inputs {
     pub snapshot: snapshot::Input,
     pub slots: [usize; 2],
     pub reasons: BTreeSet<String>,
+    /// Global simulator fill index range `[fill_start, fill_end)` this capture read.
+    pub fill_range: (usize, usize),
+    /// Exactly one pair was built, its minute tape starts at `start` and every
+    /// row through bar `k` is a directly observed usable close (no projection).
+    pub tape_complete: bool,
 }
 
 impl Backtest<'_> {
@@ -107,6 +112,7 @@ impl Backtest<'_> {
         let mut pairs = Vec::new();
         let mut flat_coin = None;
         let mut reasons = BTreeSet::new();
+        let mut tape_complete = true;
         for idx in 0..self.n_coins {
             let coin = &self.backtest_params.coins[idx];
             if symbol.is_some_and(|s| s != coin) {
@@ -233,6 +239,12 @@ impl Backtest<'_> {
                     }
                     closes.push((end, self.hlcvs_value(j, idx, CLOSE)));
                 }
+                tape_complete = tape_complete
+                    && !at_flat_boundary
+                    && first_row <= k
+                    && closes.len() == k + 1 - first_row
+                    && close_time(first_row)? == start
+                    && closes.iter().all(|(_, c)| c.is_finite() && *c > 0.0);
                 let projected = prices::minute_prices_from_ordered_closes(start, now, &closes)?;
                 reasons.extend(projected.reasons);
                 let projected: BTreeMap<_, _> = projected
@@ -273,6 +285,7 @@ impl Backtest<'_> {
                 });
             }
         }
+        let tape_complete = tape_complete && pairs.len() == 1;
         Ok(Inputs {
             snapshot: snapshot::Input {
                 flat_coin,
@@ -294,6 +307,8 @@ impl Backtest<'_> {
                 self.hard_stop_coin_slot_n_positions(SHORT),
             ],
             reasons,
+            fill_range: (fill_start, fill_end),
+            tape_complete,
         })
     }
 }
