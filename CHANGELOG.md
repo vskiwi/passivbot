@@ -6,6 +6,13 @@ since the latest release tag; these features may already be available when insta
 
 ## Unreleased
 
+- Extend an unchanged sliding-window coin HSL capture by one bar in the backtester
+  instead of rebuilding the whole lookback window every minute once a position is
+  older than `pnls_max_lookback_days`. Decisions, lifecycle events, reports and fills
+  are unchanged; any new, expired or changed fill, position, candle, budget or slot
+  returns to the full reconstruction. Long HSL backtests no longer slow down by
+  orders of magnitude after the first lookback period.
+
 - Sign Lighter cancels and modifications with the exact order index. Indexes above the
   binary64 integer range are no longer rounded before they reach the signer.
 
